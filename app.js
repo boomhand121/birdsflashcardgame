@@ -8,7 +8,69 @@ function button(text,fn,parent,cls){const b=document.createElement('button');b.t
 function p(text,parent,cls){const e=document.createElement('p');e.textContent=text;if(cls)e.className=cls;parent.append(e);return e}
 function current(){return birds[order[position]]}
 function say(english){const synth=window.speechSynthesis;if(!synth){$('msg').textContent='此瀏覽器未支援語音播放。';return}const voices=synth.getVoices(),voice=voices.find(v=>english?/^en[-_]/i.test(v.lang):/zh[-_]HK|yue|cantonese/i.test(v.lang+' '+v.name));if(!english&&!voice){$('msg').textContent='未找到廣東話聲線。請在裝置語音設定安裝香港粵語聲線，再重新開啟網頁。';return}const u=new SpeechSynthesisUtterance(current()[english?1:0]);u.lang=english?'en-GB':'zh-HK';if(voice)u.voice=voice;u.rate=.85;u.onerror=()=>{$('msg').textContent='未能播放語音，請檢查裝置語音設定。'};synth.cancel();synth.speak(u)}
+const activities = {
+  match: {title: '相片配對', instruction: '根據鳥名，選出相符的相片。'},
+  traits: {title: '特徵選擇題', instruction: '閱讀特徵，選出符合描述的雀鳥。'}
+};
+
+function renderActivity(id, bird, heading, content) {
+  const activity = activities[mode];
+  const question = Boolean(activity && !revealed);
+  document.querySelector('.card').classList.toggle('question-only', question);
+  document.querySelector('.library').hidden = mode !== 'learn';
+  for (const name of Object.keys(activities)) {
+    $(name).classList.toggle('active', mode === name);
+    $(name).setAttribute('aria-pressed', String(mode === name));
+  }
+  if (!activity) return false;
+  $('modeLabel').textContent = activity.instruction;
+  $('field').textContent = activity.title;
+  $('progress').textContent = '答對 ' + score + ' / 已答 ' + attempts;
+  if (!question) return false;
+
+  const matching = mode === 'match';
+  heading.textContent = matching ? bird[0] + ' · ' + bird[1] : '這些特徵屬於哪種雀鳥？';
+  p(matching ? activity.instruction : bird[2].split(bird[0]).join('這種雀鳥'), content, 'question-clue');
+  const choices = document.createElement('div');
+  choices.className = matching ? 'photo-choices' : 'options';
+  content.append(choices);
+  const names = new Set([bird[0]]);
+  const alternatives = shuffle(order).filter(index => {
+    const name = birds[index][0];
+    if (names.has(name)) return false;
+    names.add(name);
+    return true;
+  }).slice(0, 3);
+  shuffle([id, ...alternatives]).forEach((index, slot) => {
+    const label = '相片 ' + String.fromCharCode(65 + slot);
+    const choice = button(matching ? label : birds[index][0], () => {
+      if (answered) return;
+      answered = revealed = true;
+      attempts++;
+      if (index === id) score++;
+      render();
+      $('msg').textContent = index === id ? '答對了！' : '正確答案是' + bird[0] + '。再看看相片和辨認筆記。';
+    }, choices);
+    if (matching) {
+      const image = new Image();
+      image.src = birds[index][3];
+      image.alt = '';
+      choice.prepend(image);
+    }
+  });
+  return true;
+}
+
+for (const name of Object.keys(activities)) {
+  $(name).onclick = () => {
+    mode = name;
+    score = attempts = position = 0;
+    order = shuffle(order);
+    move(0);
+  };
+}
 function render(){const d=current(),id=order[position],hidden=!revealed;$('content').replaceChildren();$('msg').textContent='';$('pic').src=d[3];$('pic').alt=hidden?'待辨認的雀鳥相片':d[0]+' — '+d[1];$('photo').classList.toggle('challenge',mode==='quiz'&&hidden);const f=d[4]||[...(focus[id]||[50,50]),2.5];$('pic').style.objectPosition=mode==='quiz'&&hidden?`${f[0]}% ${f[1]}%`:'center';$('pic').style.transformOrigin=`${f[0]}% ${f[1]}%`;$('pic').style.transform=mode==='quiz'&&hidden?`scale(${f[2]||2.5})`:'none';$('tag').textContent='FIELD CARD / '+String(id+1).padStart(2,'0');$('photoLabel').textContent=mode==='quiz'&&hidden?'局部放大 · 你認得這個特徵嗎？':'觀察頭部、嘴喙、翅膀與尾羽';$('field').textContent=mode==='learn'?'OBSERVE & REMEMBER':'DETAIL DETECTIVE';$('count').textContent=`${position+1} / ${order.length}`;$('progress').textContent=mode==='quiz'?`答對 ${score} / 已答 ${attempts}`:`${birds.length} 張雀鳥圖卡`;$('modeLabel').textContent=mode==='learn'?'先觀察，再揭曉鳥名':'根據局部相片，選出正確鳥名';$('learn').classList.toggle('active',mode==='learn');$('quiz').classList.toggle('active',mode==='quiz');$('learn').setAttribute('aria-pressed',mode==='learn');$('quiz').setAttribute('aria-pressed',mode==='quiz');document.querySelector('.intro-note span').textContent=birds.length;const c=$('content'),h=document.createElement('h2');h.textContent=hidden?'這位雀鳥朋友是誰？':d[0];c.append(h);
+if(renderActivity(id,d,h,c)){renderLibrary();return}
 if(hidden&&mode==='learn'){p('先留意牠的羽色、嘴形和身體輪廓。心中有答案後，翻卡看看吧！',c,'hint');button('↻ 翻卡・揭曉鳥名',()=>{revealed=true;render()},c,'primary')}
 else if(hidden){p('細看相片中的一個小細節，選出牠的名字。',c,'hint');const opts=document.createElement('div');opts.className='options';c.append(opts);shuffle([id,...shuffle(birds.map((_,j)=>j).filter(j=>j!==id)).slice(0,3)]).forEach(j=>{const b=button(birds[j][0],()=>{if(answered)return;answered=true;attempts++;const correct=j===id;if(correct)score++;revealed=true;render();$('msg').textContent=correct?'✓ 答對了！看看完整相片，再記住牠的特徵。':`再記住這個特徵：正確答案是「${d[0]}」。`},opts)});button('查看答案',()=>{if(!answered){attempts++;answered=true}revealed=true;render();$('msg').textContent='一起認識牠，下次再挑戰！'},c)}
 else{p(d[1],c,'eng');const sounds=document.createElement('div');sounds.className='sound';c.append(sounds);button('◖)) 廣東話',()=>say(false),sounds);button('◖)) English',()=>say(true),sounds);const note=document.createElement('div');note.className='note';c.append(note);const strong=document.createElement('b');strong.textContent='辨認筆記';note.append(strong);p(d[2],note);if(mode==='learn')button('↻ 再看相片',()=>{revealed=false;render()},note)}renderLibrary()}
